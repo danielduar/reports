@@ -30,6 +30,14 @@
                 {{ dbConnected ? 'Banco Conectado' : 'Modo Offline / Local' }}
               </span>
 
+              <!-- Feedback Toast de Salvamento -->
+              <transition enter-active-class="transition duration-200 ease-out" enter-from-class="opacity-0 translate-y-1" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition duration-150 ease-in" leave-from-class="opacity-100" leave-to-class="opacity-0">
+                <span v-if="saveSuccessMessage" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[7.5pt] font-bold bg-emerald-600 text-white shadow-sm">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+                  {{ saveSuccessMessage }}
+                </span>
+              </transition>
+
               <!-- Botões de Backup / Restaurar -->
               <button @click="exportBackup" type="button" class="inline-flex items-center gap-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-medium transition shadow-2xs" title="Baixar backup dos relatórios">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
@@ -1070,6 +1078,14 @@ const showPublisherModal = ref(false);
 const showGroupModal = ref(false);
 const reportToDelete = ref<Report | null>(null);
 const copySuccessToast = ref(false);
+const saveSuccessMessage = ref('');
+
+function showNotification(msg: string) {
+  saveSuccessMessage.value = msg;
+  setTimeout(() => {
+    saveSuccessMessage.value = '';
+  }, 3500);
+}
 
 const modalReport = ref<Report>({
   id: undefined,
@@ -1259,7 +1275,7 @@ function resetToCurrentMonth() {
   const now = new Date();
   const currentMonthIdx = now.getMonth();
   const targetIdx = (currentMonthIdx - 1 + 12) % 12;
-  selectedMonth.value = calendarMonths[targetIdx];
+  selectedMonth.value = calendarMonths[targetIdx] ?? 'Outubro';
 }
 
 function confirmDeleteReport(rep: Report) {
@@ -1398,9 +1414,6 @@ function quickReport(pub: Publisher) {
 
 async function submitReport() {
   const reportData = { ...modalReport.value };
-  if (!reportData.id) {
-    reportData.id = Date.now();
-  }
 
   const matchedGroup = groups.value.find(g => g.name === reportData.group);
   if (matchedGroup && matchedGroup.id) {
@@ -1410,13 +1423,23 @@ async function submitReport() {
   if (dbConnected.value) {
     try {
       const res = await api.saveReport(reportData);
-      if (res && res.id) reportData.id = res.id;
+      if (res && res.id) {
+        reportData.id = res.id;
+        showNotification(`Relatório de ${reportData.name} salvo no PostgreSQL!`);
+      }
     } catch (e) {
       console.error("Erro ao salvar relatório no banco:", e);
+      showNotification(`Salvo localmente (offline)`);
     }
+  } else {
+    if (!reportData.id) reportData.id = Date.now();
+    showNotification(`Salvo localmente (offline)`);
   }
 
-  const idx = reports.value.findIndex(r => (r.id && r.id === reportData.id) || (r.name === reportData.name && r.month === reportData.month && r.service_year === reportData.service_year));
+  const idx = reports.value.findIndex(r =>
+      (r.id && reportData.id && r.id === reportData.id) ||
+      (r.name === reportData.name && r.month === reportData.month && r.service_year === reportData.service_year)
+  );
   if (idx !== -1) {
     reports.value[idx] = reportData;
   } else {
@@ -1468,9 +1491,13 @@ async function submitPublisher() {
   if (dbConnected.value) {
     try {
       await api.savePublisher(pubData);
+      showNotification(`${pubData.name} gravado no PostgreSQL!`);
     } catch (e) {
       console.error("Erro ao salvar publicador no banco:", e);
+      showNotification(`Salvo localmente (offline)`);
     }
+  } else {
+    showNotification(`Salvo localmente (offline)`);
   }
 
   const idx = publishers.value.findIndex(p => (p.id && p.id === pubData.id) || p.name === pubData.name);
